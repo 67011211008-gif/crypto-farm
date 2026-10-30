@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crypto Farm</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:system-ui,sans-serif;background:#8ed081;overflow:hidden;user-select:none;touch-action:none}
+#game{position:fixed;inset:0}
+canvas{display:block;width:100%;height:100%}
+.top{position:absolute;top:8px;left:8px;right:8px;background:rgba(255,255,255,.94);border-radius:16px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 12px;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:5}
+.logo{font-weight:bold;color:#438d42;font-size:18px}
+.stat{background:#f3f7ef;padding:5px 10px;border-radius:12px;font-size:13px}
+.xp{width:90px;height:8px;background:#ddd;border-radius:9px;overflow:hidden;display:inline-block;vertical-align:middle;margin-left:4px}
+#xpf{height:100%;background:#72b84b;width:0}
+.side{position:absolute;top:64px;right:8px;width:210px;max-height:calc(100% - 80px);overflow:auto;background:rgba(255,255,255,.96);border-radius:16px;padding:12px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:5}
+.side h3{color:#438d42;margin:4px 0 6px}
+button{border:0;border-radius:10px;padding:7px 10px;cursor:pointer;background:#71b84c;color:#fff;font-weight:bold}
+.seed{width:100%;margin:2px 0;text-align:left;display:flex;justify-content:space-between;background:#a8c99a;color:#243}
+.seed.sel{background:#71b84c;color:#fff}
+.seed:disabled{opacity:.5}
+.row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #eee}
+.sell{background:#e4a52c;width:100%;margin-top:8px}
+.reset{background:#d65d5d;width:100%;margin-top:6px}
+#msg{position:absolute;left:50%;top:70px;transform:translateX(-50%);background:rgba(40,60,30,.9);color:#fff;padding:9px 18px;border-radius:18px;opacity:0;transition:.3s;pointer-events:none;z-index:9;max-width:70%;text-align:center}
+#msg.show{opacity:1}
+#hint{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:rgba(0,0,0,.72);color:#fff;padding:8px 16px;border-radius:18px;z-index:5;font-size:14px;white-space:nowrap}
+.pad{position:absolute;left:14px;bottom:56px;width:150px;height:150px;z-index:6;display:none}
+.pad div,.act{position:absolute;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.85);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 3px 8px rgba(0,0,0,.2)}
+.act{right:16px;bottom:70px;width:68px;height:68px;background:#f1a928;color:#fff;font-weight:bold;display:none;z-index:6}
+@media(pointer:coarse){.pad,.act{display:flex}.pad{display:block}}
+@media(max-width:700px){.side{width:170px;font-size:12px;max-height:45%}.logo{display:none}}
+</style>
+</head>
+<body>
+<div id="game">
+<canvas id="cv"></canvas>
+<div class="top">
+<span class="logo">🌾 Crypto Farm</span>
+<span class="stat">🪙 <b id="coins">0</b></span>
+<span class="stat">⭐ Lv.<b id="level">1</b><span class="xp"><span id="xpf"></span></span></span>
+<span class="stat">📅 วันที่ <b id="day">1</b></span>
+<span class="stat">🕐 <b id="clock">08:00</b></span>
+<span class="stat">💎 <b id="bnb">0</b> BNB</span>
+<button id="wbtn" style="padding:5px 12px;background:#f3ba2f;color:#0f172a">🦊 Connect Wallet</button>
+</div>
+<div id="msg"></div>
+<div id="hint"></div>
+<div class="side">
+<h3>🌱 เมล็ดพันธุ์</h3><div id="seeds"></div>
+<h3 style="margin-top:10px">📦 คลังสินค้า</h3><div id="inv"></div>
+<button class="sell" onclick="sellAll()">🛒 ขายของทั้งหมด</button>
+<button class="reset" onclick="resetGame()">🔄 เริ่มเกมใหม่</button>
+<p style="margin-top:8px;color:#666">WASD/ลูกศร = เดิน<br>E = ปลูก/รดน้ำ/เก็บ/ใช้เครื่อง<br>ร้านเมล็ด 🏪 ซื้อเมล็ดที่เลือก · ตลาด 🏬 ขายของ · 🏦 แลกเหรียญเป็น BNB (จำลอง)</p>
+</div>
+<div class="pad" id="pad">
+<div style="left:51px;top:0" data-k="up">▲</div><div style="left:51px;bottom:0" data-k="down">▼</div>
+<div style="left:0;top:51px" data-k="left">◀</div><div style="right:0;top:51px" data-k="right">▶</div>
+</div>
+<div class="act" id="act">E</div>
+</div>
+<script>
+const WW=1200,WH=720,SAVE="cryptofarm_combined_v1",DAY=1440;
+const crops={
+ carrot:{n:"แครอท",e:"🥕",grow:60,sell:8,seed:3},
+ wheat:{n:"ข้าวสาลี",e:"🌾",grow:50,sell:6,seed:2},
+ corn:{n:"ข้าวโพด",e:"🌽",grow:90,sell:12,seed:5},
+ tomato:{n:"มะเขือเทศ",e:"🍅",grow:100,sell:15,seed:6},
+ potato:{n:"มันฝรั่ง",e:"🥔",grow:80,sell:13,seed:5},
+ strawberry:{n:"สตรอว์เบอร์รี",e:"🍓",grow:125,sell:22,seed:8}
+};
+const prods={
+ bread:{n:"ขนมปัง",e:"🍞",sell:30},
+ juice:{n:"น้ำมะเขือเทศ",e:"🧃",sell:40},
+ jam:{n:"แยมสตรอว์เบอร์รี",e:"🍯",sell:55}
+};
+const machineDefs=[
+ {type:"bakery",e:"🏭",n:"เตาอบ",need:"wheat",qty:2,out:"bread",dur:60,x:720,y:330},
+ {type:"juicer",e:"⚙️",n:"เครื่องคั้นน้ำ",need:"tomato",qty:2,out:"juice",dur:80,x:830,y:330},
+ {type:"jam",e:"🫙",n:"เครื่องทำแยม",need:"strawberry",qty:2,out:"jam",dur:100,x:940,y:330}
+];
+const spots={
+ house:{x:100,y:80,e:"🏠",n:"บ้านของฉัน"},
+ shop:{x:720,y:90,e:"🏪",n:"ร้านเมล็ดพันธุ์"},
+ market:{x:900,y:90,e:"🏬",n:"ตลาด"},
+ well:{x:80,y:600,e:"⛲",n:"บ่อน้ำ"},
+ exchange:{x:1080,y:90,e:"🏦",n:"ตลาดแลก BNB"}
+};
+const ALL=[...Object.keys(crops),...Object.keys(prods)];
+function fresh(){
+ const g={coins:120,bnb:0,level:1,xp:0,tick:8*60,sel:"carrot",inv:{},seeds:{carrot:8,wheat:8,corn:2,tomato:0,potato:0,strawberry:0},plots:[],machines:[]};
+ ALL.forEach(k=>g.inv[k]=0);
+ for(let r=0;r<3;r++)for(let c=0;c<6;c++)g.plots.push({x:60+c*100,y:200+r*100,crop:null,prog:0,watered:false});
+ machineDefs.forEach(d=>g.machines.push({type:d.type,busy:false,finish:0,done:false}));
+ return g;
+}
+function num(v,d){return Number.isFinite(v)?v:d}
+function load(){
+ const g=fresh();
+ try{
+  const s=JSON.parse(localStorage.getItem(SAVE)||"null");
+  if(!s)return g;
+  g.coins=Math.max(0,num(s.coins,g.coins));g.bnb=Math.max(0,num(s.bnb,0));g.level=Math.max(1,num(s.level,1));g.xp=Math.max(0,num(s.xp,0));g.tick=num(s.tick,g.tick);
+  if(crops[s.sel])g.sel=s.sel;
+  ALL.forEach(k=>g.inv[k]=Math.max(0,num(s.inv&&s.inv[k],0)));
+  Object.keys(g.seeds).forEach(k=>g.seeds[k]=Math.max(0,num(s.seeds&&s.seeds[k],g.seeds[k])));
+  if(Array.isArray(s.plots))g.plots.forEach((p,i)=>{const q=s.plots[i];if(q&&crops[q.crop]){p.crop=q.crop;p.prog=Math.max(0,num(q.prog,0));p.watered=!!q.watered}});
+  if(Array.isArray(s.machines))g.machines.forEach((m,i)=>{const q=s.machines[i];if(q&&q.type===m.type){m.busy=!!q.busy;m.finish=num(q.finish,0);m.done=!!q.done}});
+ }catch(e){}
+ return g;
+}
+let game=load();
+function save(){try{localStorage.setItem(SAVE,JSON.stringify(game))}catch(e){}}
+const player={x:300,y:150,speed:230,dir:1};
+const npcs=[{e:"👩‍🌾",x:400,y:600,tx:400,ty:600,lines:["อากาศดีจังเลย!","รดน้ำแล้วพืชโตเร็วขึ้น 1.5 เท่านะ","ข้าวสาลี 2 ชิ้นทำขนมปังได้!"]},
+ {e:"👴",x:600,y:560,tx:600,ty:560,lines:["สตรอว์เบอร์รีทำแยมได้ราคาดีมาก","วันนี้ตลาดคึกคักนะ"]}];
+const animals=[{e:"🐔",x:1000,y:520,tx:1000,ty:520},{e:"🐄",x:1080,y:600,tx:1080,ty:600},{e:"🐖",x:980,y:640,tx:980,ty:640}];
+const $=id=>document.getElementById(id);
+const cv=$("cv"),ctx=cv.getContext("2d");
+let sc=1,ox=0,oy=0;
+function resize(){cv.width=innerWidth;cv.height=innerHeight;sc=Math.min(cv.width/WW,cv.height/WH);ox=(cv.width-WW*sc)/2;oy=(cv.height-WH*sc)/2}
+addEventListener("resize",resize);resize();
+let mt=0;
+function msg(t){const m=$("msg");m.textContent=t;m.classList.add("show");clearTimeout(mt);mt=setTimeout(()=>m.classList.remove("show"),1800)}
+function addXP(a){
+ game.xp+=a;
+ while(game.xp>=game.level*100){game.xp-=game.level*100;game.level++;game.coins+=50;msg("🎉 เลเวลอัป! Lv."+game.level+" +50 🪙")}
+}
+function growth(p){return p.prog}
+function ready(p){return p.crop&&p.prog>=crops[p.crop].grow}
+function dist(ax,ay,bx,by){return Math.hypot(ax-bx,ay-by)}
+function nearest(){
+ let best=70,n=null;
+ const chk=(x,y,o)=>{const d=dist(player.x,player.y,x,y);if(d<best){best=d;n=o}};
+ game.plots.forEach((p,i)=>chk(p.x+38,p.y+38,{t:"plot",i}));
+ machineDefs.forEach((d,i)=>chk(d.x,d.y,{t:"machine",i}));
+ for(const k in spots)chk(spots[k].x,spots[k].y,{t:k});
+ npcs.forEach((o,i)=>chk(o.x,o.y,{t:"npc",i}));
+ return n;
+}
+function interact(){
+ const n=nearest();
+ if(!n){msg("🚶 เดินเข้าใกล้สิ่งของก่อน");return}
+ if(n.t==="plot"){
+  const p=game.plots[n.i];
+  if(!p.crop){
+   const s=game.sel;
+   if(game.seeds[s]<=0){msg("❌ ไม่มีเมล็ด"+crops[s].n+" (ซื้อที่ร้าน 🏪)");return}
+   game.seeds[s]--;p.crop=s;p.prog=0;p.watered=false;addXP(3);msg("🌱 ปลูก"+crops[s].n+"แล้ว!");
+  }else if(ready(p)){
+   const c=crops[p.crop];game.inv[p.crop]++;game.seeds[p.crop]++;p.crop=null;p.prog=0;p.watered=false;addXP(10);msg(c.e+" เก็บเกี่ยว"+c.n+"แล้ว!");
+  }else if(!p.watered){p.watered=true;addXP(2);msg("💧 รดน้ำแล้ว! โตเร็วขึ้น")}
+  else msg("🌱 "+crops[p.crop].n+" กำลังโต...");
+ }else if(n.t==="machine"){useMachine(n.i)}
+ else if(n.t==="market")sellAll();
+ else if(n.t==="exchange")exchange();
+ else if(n.t==="shop")buySeed();
+ else if(n.t==="npc"){const l=npcs[n.i].lines;msg("💬 "+l[Math.floor(Math.random()*l.length)])}
+ else msg(spots[n.t].e+" "+spots[n.t].n);
+ save();ui();
+}
+function useMachine(i){
+ const d=machineDefs[i],m=game.machines[i],o=prods[d.out];
+ if(m.done){game.inv[d.out]++;m.done=false;m.busy=false;addXP(15);msg(o.e+" ได้รับ"+o.n+"!");return}
+ if(m.busy){msg("⏳ เครื่องกำลังผลิต...");return}
+ if(game.inv[d.need]<d.qty){msg("❌ ต้องใช้"+crops[d.need].n+" "+d.qty+" ชิ้น");return}
+ game.inv[d.need]-=d.qty;m.busy=true;m.finish=game.tick+d.dur;msg(o.e+" เริ่มทำ"+o.n+"!");
+}
+function buySeed(){
+ const s=game.sel,c=crops[s];
+ if(game.coins<c.seed){msg("❌ เงินไม่พอ");return}
+ game.coins-=c.seed;game.seeds[s]++;msg("🌱 ซื้อเมล็ด"+c.n+" +1");save();ui();
+}
+function sellAll(){
+ let t=0;
+ ALL.forEach(k=>{const a=game.inv[k];if(a>0){t+=a*(crops[k]?crops[k].sell:prods[k].sell);game.inv[k]=0}});
+ if(!t){msg("📦 ยังไม่มีของให้ขาย");return}
+ game.coins+=t;msg("💰 ขายได้ "+t+" 🪙");save();ui();
+}
+function selectSeed(k){game.sel=k;msg("เลือก "+crops[k].e+" "+crops[k].n);ui()}
+function resetGame(){if(confirm("เริ่มเกมใหม่? ข้อมูลเดิมจะหายทั้งหมด")){game=fresh();player.x=300;player.y=150;save();ui();msg("🔄 เริ่มเกมใหม่แล้ว")}}
+function ui(){
+ $("coins").textContent=Math.floor(game.coins);
+ $("bnb").textContent=game.bnb.toFixed(4);
+ $("level").textContent=game.level;
+ $("xpf").style.width=Math.min(100,game.xp/(game.level*100)*100)+"%";
+ $("day").textContent=Math.floor(game.tick/DAY)+1;
+ const t=Math.floor(game.tick%DAY);
+ $("clock").textContent=String(Math.floor(t/60)).padStart(2,"0")+":"+String(t%60).padStart(2,"0");
+ $("seeds").innerHTML=Object.keys(crops).map(k=>`<button class="seed ${game.sel===k?"sel":""}" onclick="selectSeed('${k}')"><span>${crops[k].e} ${crops[k].n} <small>(${crops[k].seed}🪙)</small></span><b>${game.seeds[k]}</b></button>`).join("");
+ const items=ALL.filter(k=>game.inv[k]>0);
+ $("inv").innerHTML=items.length?items.map(k=>{const o=crops[k]||prods[k];return `<div class="row"><span>${o.e} ${o.n}</span><b>${game.inv[k]}</b></div>`}).join(""):'<div style="color:#888">ว่างเปล่า</div>';
+}
+const keys={};
+const map={ArrowUp:"up",w:"up",W:"up",ArrowDown:"down",s:"down",S:"down",ArrowLeft:"left",a:"left",A:"left",ArrowRight:"right",d:"right",D:"right"};
+addEventListener("keydown",e=>{
+ if(map[e.key]){keys[map[e.key]]=true;e.preventDefault()}
+ else if((e.key==="e"||e.key==="E")&&!e.repeat)interact();
+});
+addEventListener("keyup",e=>{if(map[e.key])keys[map[e.key]]=false});
+addEventListener("blur",()=>{for(const k in keys)keys[k]=false});
+document.querySelectorAll("#pad div").forEach(b=>{
+ const k=b.dataset.k;
+ b.addEventListener("pointerdown",e=>{e.preventDefault();keys[k]=true});
+ ["pointerup","pointerleave","pointercancel"].forEach(ev=>b.addEventListener(ev,()=>keys[k]=false));
+});
+$("act").addEventListener("pointerdown",e=>{e.preventDefault();interact()});
+function wander(o,x0,y0,x1,y1,sp,dt,p){
+ if(Math.random()<p*dt*60){o.tx=x0+Math.random()*(x1-x0);o.ty=y0+Math.random()*(y1-y0)}
+ const dx=o.tx-o.x,dy=o.ty-o.y,d=Math.hypot(dx,dy);
+ if(d>4){o.x+=dx/d*sp*dt;o.y+=dy/d*sp*dt}
+}
+let last=performance.now(),acc=0,hint="";
+function loop(now){
+ const dt=Math.min(0.1,(now-last)/1000);last=now;
+ let vx=(keys.right?1:0)-(keys.left?1:0),vy=(keys.down?1:0)-(keys.up?1:0);
+ if(vx||vy){const l=Math.hypot(vx,vy);player.x+=vx/l*player.speed*dt;player.y+=vy/l*player.speed*dt;if(vx)player.dir=vx}
+ player.x=Math.max(20,Math.min(WW-20,player.x));player.y=Math.max(40,Math.min(WH-20,player.y));
+ const dm=dt*2;
+ game.tick+=dm;
+ game.plots.forEach(p=>{if(p.crop&&!ready(p))p.prog+=dm*(p.watered?1.5:1)});
+ game.machines.forEach(m=>{if(m.busy&&!m.done&&game.tick>=m.finish){m.done=true;msg("✨ ผลิตเสร็จแล้ว! ไปเก็บที่เครื่อง")}});
+ npcs.forEach(o=>wander(o,200,520,800,700,50,dt,.004));
+ animals.forEach(o=>wander(o,940,480,1170,700,40,dt,.008));
+ acc+=dt;if(acc>.25){acc=0;ui()}
+ if(Math.floor(game.tick/60)%3===0&&Math.random()<.002)save();
+ draw();
+ const n=nearest();
+ let h="เดินเข้าใกล้สิ่งของเพื่อโต้ตอบ (E)";
+ if(n){
+  if(n.t==="plot"){const p=game.plots[n.i];h=!p.crop?"E: ปลูก"+crops[game.sel].n:ready(p)?"E: เก็บเกี่ยว":p.watered?"กำลังโต...":"E: รดน้ำ"}
+  else if(n.t==="machine"){const m=game.machines[n.i],d=machineDefs[n.i];h=m.done?"E: เก็บ"+prods[d.out].n:m.busy?"กำลังผลิต "+Math.max(0,Math.ceil((m.finish-game.tick)/2))+" วิ":"E: ใส่"+crops[d.need].n+" "+d.qty+" ชิ้น"}
+  else if(n.t==="market")h="E: ขายของทั้งหมด";
+  else if(n.t==="exchange")h="E: แลก 100 🪙 เป็น 0.001 BNB";
+  else if(n.t==="shop")h="E: ซื้อเมล็ด"+crops[game.sel].n+" ("+crops[game.sel].seed+"🪙)";
+  else if(n.t==="npc")h="E: พูดคุย";
+  else h=spots[n.t].n;
+ }
+ if(h!==hint){hint=h;$("hint").textContent=h}
+ requestAnimationFrame(loop);
+}
+function em(t,x,y,s){ctx.font=s+"px sans-serif";ctx.fillText(t,x,y)}
+function draw(){
+ ctx.setTransform(1,0,0,1,0,0);
+ ctx.fillStyle="#6fbf5f";ctx.fillRect(0,0,cv.width,cv.height);
+ ctx.setTransform(sc,0,0,sc,ox,oy);
+ ctx.fillStyle="#8fd17c";ctx.fillRect(0,0,WW,WH);
+ ctx.fillStyle="#d8b47a";ctx.fillRect(0,150,WW,30);
+ ctx.fillStyle="#b58a55";ctx.fillRect(920,470,270,240);
+ ctx.fillStyle="#8fd17c";ctx.fillRect(930,480,250,220);
+ ctx.textAlign="center";ctx.textBaseline="middle";
+ for(const k in spots){em(spots[k].e,spots[k].x,spots[k].y,56)}
+ ctx.fillStyle="#333";ctx.font="13px sans-serif";
+ ctx.fillText("ร้านเมล็ด",spots.shop.x,spots.shop.y+42);ctx.fillText("ตลาด",spots.market.x,spots.market.y+42);ctx.fillText("แลก BNB",spots.exchange.x,spots.exchange.y+42);
+ game.plots.forEach(p=>{
+  ctx.fillStyle=!p.crop?"#78350f":p.watered?"#5a3a1c":"#8a5a2b";
+  ctx.beginPath();ctx.roundRect(p.x,p.y,76,76,10);ctx.fill();
+  ctx.strokeStyle="#451a03";ctx.lineWidth=3;ctx.stroke();
+  if(p.crop){
+   const c=crops[p.crop],f=Math.min(1,p.prog/c.grow);
+   if(f>=1){em(c.e,p.x+38,p.y+38,38);em("✨",p.x+62,p.y+14,16)}
+   else{em(f<.5?"🌱":"🌿",p.x+38,p.y+38,16+f*22);
+    ctx.fillStyle="#0004";ctx.fillRect(p.x+8,p.y+66,60,5);ctx.fillStyle="#72b84b";ctx.fillRect(p.x+8,p.y+66,60*f,5)}
+   if(p.watered&&f<1)em("💧",p.x+12,p.y+12,12);
+  }
+ });
+ machineDefs.forEach((d,i)=>{
+  const m=game.machines[i];
+  em(d.e,d.x,d.y,50);
+  ctx.fillStyle="#333";ctx.font="13px sans-serif";ctx.fillText(d.n,d.x,d.y+40);
+  if(m.done)em(prods[d.out].e,d.x+28,d.y-28,26);
+  else if(m.busy)em("⏳",d.x+28,d.y-28,22);
+ });
+ animals.forEach(o=>em(o.e,o.x,o.y,32));
+ npcs.forEach(o=>em(o.e,o.x,o.y,40));
+ ctx.save();ctx.translate(player.x,player.y);ctx.scale(player.dir<0?-1:1,1);em("🧑‍🌾",0,0,44);ctx.restore();
+}
+function exchange(){
+ if(game.coins<100){msg("❌ ต้องมีอย่างน้อย 100 🪙");return}
+ const n=Math.floor(game.coins/100);
+ game.coins-=n*100;game.bnb=Math.round((game.bnb+n*0.001)*1e8)/1e8;
+ msg("🏦 แลก "+(n*100)+" 🪙 ได้ "+(n*0.001).toFixed(3)+" BNB (จำลอง)");save();ui();
+}
+const short=a=>a.slice(0,6)+"..."+a.slice(-4);
+async function connectWallet(){
+ const b=$("wbtn");
+ if(!window.ethereum||!window.ethers){msg("❌ ไม่พบ MetaMask — เปิดไฟล์ในเบราว์เซอร์ที่ติดตั้ง MetaMask");return}
+ try{
+  const pr=new ethers.providers.Web3Provider(window.ethereum);
+  const acc=await pr.send("eth_requestAccounts",[]);
+  if(!acc||!acc.length){msg("❌ ไม่ได้เลือกบัญชี");return}
+  let net=await pr.getNetwork();
+  if(net.chainId!==56){
+   try{await window.ethereum.request({method:"wallet_switchEthereumChain",params:[{chainId:"0x38"}]})}
+   catch(er){if(er&&er.code===4902){try{await window.ethereum.request({method:"wallet_addEthereumChain",params:[{chainId:"0x38",chainName:"BNB Smart Chain",nativeCurrency:{name:"BNB",symbol:"BNB",decimals:18},rpcUrls:["https://bsc-dataseed.binance.org/"],blockExplorerUrls:["https://bscscan.com"]}]})}catch(e2){}}}
+  }
+  net=await new ethers.providers.Web3Provider(window.ethereum).getNetwork();
+  b.textContent="✅ "+short(acc[0])+(net.chainId===56?" · BSC":"");
+  msg(net.chainId===56?"✅ เชื่อมกระเป๋าบน BNB Smart Chain แล้ว":"⚠️ เชื่อมแล้ว แต่ยังไม่ได้อยู่บน BSC");
+ }catch(e){msg(e&&e.code===4001?"❌ ยกเลิกการเชื่อมต่อ":"❌ เชื่อมต่อไม่สำเร็จ")}
+}
+$("wbtn").onclick=connectWallet;
+ui();requestAnimationFrame(loop);
+addEventListener("beforeunload",save);
+</script>
+</body>
+</html>
