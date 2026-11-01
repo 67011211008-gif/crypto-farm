@@ -13,3 +13,8 @@
 - ระบบ NPC และสัตว์เลี้ยงในฟาร์ม
 - ระบบเลเวลและ XP
 - เชื่อมต่อกระเป๋า MetaMask (BNB Smart Chain Testnet)
+
+## Smart Contract
+`contracts/FarmCoin.sol` คือเหรียญ FARM (ERC-20 แบบย่อ) ที่ deploy บน BNB Smart Chain Testnet ผ่าน Remix เจ้าของ contract เป็นคนเดียวที่เรียก `mint` ได้
+
+หมายเหตุ: ตัวเกมในเวอร์ชันนี้ใช้ BNB จำลองในเกม ยังไม่ได้เรียก contract โดยตรง
