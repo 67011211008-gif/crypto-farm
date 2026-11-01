@@ -54,7 +54,7 @@ button{border:0;border-radius:10px;padding:7px 10px;cursor:pointer;background:#7
 <h3 style="margin-top:10px">📦 คลังสินค้า</h3><div id="inv"></div>
 <button class="sell" onclick="sellAll()">🛒 ขายของทั้งหมด</button>
 <button class="reset" onclick="resetGame()">🔄 เริ่มเกมใหม่</button>
-<p style="margin-top:8px;color:#666">WASD/ลูกศร = เดิน<br>E = ปลูก/รดน้ำ/เก็บ/ใช้เครื่อง<br>ร้านเมล็ด 🏪 ซื้อเมล็ดที่เลือก · ตลาด 🏬 ขายของ · 🏦 แลกเหรียญเป็น BNB (จำลอง)</p>
+<p style="margin-top:8px;color:#666">คลิกเมาส์/จิ้มหน้าจอ = เดินไปตรงนั้น (คลิกที่แปลง/เครื่อง/ร้าน = เดินไปแล้วทำเลย)<br>WASD/ลูกศร = เดิน<br>E = ปลูก/รดน้ำ/เก็บ/ใช้เครื่อง<br>ร้านเมล็ด 🏪 ซื้อเมล็ดที่เลือก · ตลาด 🏬 ขายของ · 🏦 แลกเหรียญเป็น BNB (จำลอง)</p>
 </div>
 <div class="pad" id="pad">
 <div style="left:51px;top:0" data-k="up">▲</div><div style="left:51px;bottom:0" data-k="down">▼</div>
@@ -141,8 +141,8 @@ function nearest(){
  npcs.forEach((o,i)=>chk(o.x,o.y,{t:"npc",i}));
  return n;
 }
-function interact(){
- const n=nearest();
+function interact(n0){
+ const n=n0||nearest();
  if(!n){msg("🚶 เดินเข้าใกล้สิ่งของก่อน");return}
  if(n.t==="plot"){
   const p=game.plots[n.i];
@@ -208,6 +208,26 @@ document.querySelectorAll("#pad div").forEach(b=>{
  ["pointerup","pointerleave","pointercancel"].forEach(ev=>b.addEventListener(ev,()=>keys[k]=false));
 });
 $("act").addEventListener("pointerdown",e=>{e.preventDefault();interact()});
+let target=null;
+function objAt(x,y){
+ for(let i=0;i<game.plots.length;i++){const p=game.plots[i];if(x>=p.x&&x<=p.x+76&&y>=p.y&&y<=p.y+76)return{o:{t:"plot",i},x:p.x+38,y:p.y+38,stop:10}}
+ for(let i=0;i<machineDefs.length;i++){const d=machineDefs[i];if(dist(x,y,d.x,d.y)<38)return{o:{t:"machine",i},x:d.x,y:d.y,stop:40}}
+ for(let i=0;i<npcs.length;i++){const n=npcs[i];if(dist(x,y,n.x,n.y)<34)return{o:{t:"npc",i},x:n.x,y:n.y,stop:45}}
+ for(const k in spots){const s=spots[k];if(dist(x,y,s.x,s.y)<40)return{o:{t:k},x:s.x,y:s.y,stop:45}}
+ return null;
+}
+cv.addEventListener("pointerdown",e=>{
+ e.preventDefault();
+ const wx=(e.clientX-ox)/sc,wy=(e.clientY-oy)/sc;
+ if(wx<0||wy<0||wx>WW||wy>WH)return;
+ const h=objAt(wx,wy);
+ if(h)target={x:h.x,y:h.y,stop:h.stop,obj:h.o};
+ else target={x:Math.max(20,Math.min(WW-20,wx)),y:Math.max(40,Math.min(WH-20,wy)),stop:4,obj:null};
+});
+cv.addEventListener("pointermove",e=>{
+ if(e.pointerType!=="mouse")return;
+ cv.style.cursor=objAt((e.clientX-ox)/sc,(e.clientY-oy)/sc)?"pointer":"default";
+});
 function wander(o,x0,y0,x1,y1,sp,dt,p){
  if(Math.random()<p*dt*60){o.tx=x0+Math.random()*(x1-x0);o.ty=y0+Math.random()*(y1-y0)}
  const dx=o.tx-o.x,dy=o.ty-o.y,d=Math.hypot(dx,dy);
@@ -217,7 +237,12 @@ let last=performance.now(),acc=0,hint="";
 function loop(now){
  const dt=Math.min(0.1,(now-last)/1000);last=now;
  let vx=(keys.right?1:0)-(keys.left?1:0),vy=(keys.down?1:0)-(keys.up?1:0);
- if(vx||vy){const l=Math.hypot(vx,vy);player.x+=vx/l*player.speed*dt;player.y+=vy/l*player.speed*dt;if(vx)player.dir=vx}
+ if(vx||vy){target=null;const l=Math.hypot(vx,vy);player.x+=vx/l*player.speed*dt;player.y+=vy/l*player.speed*dt;if(vx)player.dir=vx}
+ else if(target){
+  const dx=target.x-player.x,dy=target.y-player.y,d=Math.hypot(dx,dy);
+  if(d<=target.stop){const o=target.obj;target=null;if(o)interact(o)}
+  else{const st=Math.min(d,player.speed*dt);player.x+=dx/d*st;player.y+=dy/d*st;if(Math.abs(dx)>2)player.dir=dx>0?1:-1}
+ }
  player.x=Math.max(20,Math.min(WW-20,player.x));player.y=Math.max(40,Math.min(WH-20,player.y));
  const dm=dt*2;
  game.tick+=dm;
@@ -229,7 +254,7 @@ function loop(now){
  if(Math.floor(game.tick/60)%3===0&&Math.random()<.002)save();
  draw();
  const n=nearest();
- let h="เดินเข้าใกล้สิ่งของเพื่อโต้ตอบ (E)";
+ let h="คลิกที่พื้นเพื่อเดิน · คลิกที่สิ่งของเพื่อโต้ตอบ (หรือกด E)";
  if(n){
   if(n.t==="plot"){const p=game.plots[n.i];h=!p.crop?"E: ปลูก"+crops[game.sel].n:ready(p)?"E: เก็บเกี่ยว":p.watered?"กำลังโต...":"E: รดน้ำ"}
   else if(n.t==="machine"){const m=game.machines[n.i],d=machineDefs[n.i];h=m.done?"E: เก็บ"+prods[d.out].n:m.busy?"กำลังผลิต "+Math.max(0,Math.ceil((m.finish-game.tick)/2))+" วิ":"E: ใส่"+crops[d.need].n+" "+d.qty+" ชิ้น"}
@@ -277,6 +302,7 @@ function draw(){
  animals.forEach(o=>em(o.e,o.x,o.y,32));
  npcs.forEach(o=>em(o.e,o.x,o.y,40));
  ctx.save();ctx.translate(player.x,player.y);ctx.scale(player.dir<0?-1:1,1);em("🧑‍🌾",0,0,44);ctx.restore();
+ if(target&&!target.obj){const r=8+3*Math.sin(performance.now()/120);ctx.strokeStyle="#fff";ctx.lineWidth=3;ctx.beginPath();ctx.arc(target.x,target.y,r,0,Math.PI*2);ctx.stroke();ctx.strokeStyle="#438d42";ctx.lineWidth=1.5;ctx.stroke()}
 }
 function exchange(){
  if(game.coins<100){msg("❌ ต้องมีอย่างน้อย 100 🪙");return}
